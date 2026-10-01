@@ -7,9 +7,17 @@ async function digest(value: string) {
 }
 
 export async function proxy(request: NextRequest) {
-  if (process.env.NODE_ENV !== "production") return NextResponse.next();
+
+  if (process.env.NODE_ENV !== "production") {
+    return NextResponse.next();
+  }
 
   const expectedPassword = process.env.ADMIN_PASSWORD;
+
+  console.log(
+    "ADMIN_PASSWORD configured:",
+    Boolean(expectedPassword)
+  );
 
   if (!expectedPassword) {
     return new NextResponse("Lead admin is not configured.", {
@@ -17,6 +25,9 @@ export async function proxy(request: NextRequest) {
       headers: { "Cache-Control": "no-store" },
     });
   }
+
+  // ...rest of your existing code
+}
 
   const encodedCredentials = request.headers
     .get("authorization")
