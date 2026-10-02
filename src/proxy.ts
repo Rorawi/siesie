@@ -26,9 +26,6 @@ export async function proxy(request: NextRequest) {
     });
   }
 
-  // ...rest of your existing code
-}
-
   const encodedCredentials = request.headers
     .get("authorization")
     ?.match(/^Basic\s+(.+)$/i)?.[1];

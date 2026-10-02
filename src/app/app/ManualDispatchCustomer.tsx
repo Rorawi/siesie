@@ -16,6 +16,7 @@ type CustomerRequestStatus = {
   updated_at: string;
   status_history: StatusEvent[];
   support_contacts?: { name: string; phone: string }[];
+  mechanic?: { name: string; phone: string } | null;
   arrival_code: string | null;
 };
 
@@ -260,6 +261,15 @@ function ActivityView({ request, requestId, onNewRequest }: { request: CustomerR
     <section className="mx-auto min-h-[calc(100dvh-144px)] w-full max-w-4xl px-5 py-8 sm:px-8">
       <p className="text-xs font-bold uppercase tracking-[0.18em] text-[var(--muted)]">Request status</p><h1 className="mt-2 text-3xl font-black">Activity</h1>
       {request && (request.status === "arrived" || request.status === "in_progress") && request.arrival_code && <div className="mt-5 rounded-xl border border-[#cddfc4] bg-[#f2f8ed] p-5"><p className="text-xs font-bold uppercase tracking-wider text-[#0b2f20]">Arrival verification code</p><p className="mt-1 text-3xl font-black tracking-[0.2em] text-[#0b2f20]">{request.arrival_code}</p><p className="mt-1 text-sm text-[var(--muted)]">Share this with the mechanic to confirm you’re meeting the right person.</p></div>}
+      {request && request.mechanic && request.status !== "completed" && request.status !== "cancelled" && request.status !== "no_show" && (
+        <div className="mt-5 flex items-center justify-between rounded-xl border border-[#cddfc4] bg-[#f2f8ed] p-4">
+          <div>
+            <p className="text-sm font-bold text-[#0b2f20]">{request.mechanic.name}</p>
+            <p className="text-xs text-[var(--muted)]">Your assigned mechanic</p>
+          </div>
+          <a href={`tel:${request.mechanic.phone.replace(/[^+\d]/g, "")}`} className="flex h-10 items-center justify-center rounded-lg bg-[#0b2f20] px-4 text-sm font-bold text-white">Call mechanic</a>
+        </div>
+      )}
       {request && current ? <article className="mt-6 rounded-[22px] border border-[var(--line)] bg-white p-5 shadow-sm sm:p-6"><div className="flex items-start gap-4"><div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#edf6e6] text-[#0b2f20]"><ClipboardList className="h-5 w-5" /></div><div className="min-w-0 flex-1"><span className="rounded-full bg-[#eff7e9] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#0b2f20]">{request.status.replace("_", " ")}</span><h2 className="mt-3 text-xl font-black">{current.title}</h2><p className="mt-1 text-sm leading-6 text-[var(--muted)]">{current.detail}</p><p className="mt-4 border-t border-[var(--line)] pt-4 text-sm font-semibold">{request.service_type}</p><p className="mt-1 text-xs text-[var(--muted)]">Reference {request.id}</p>{request.status_history.length > 0 && <ol className="mt-5 space-y-3 border-l-2 border-[#d8e6d0] pl-4">{request.status_history.map((entry, index) => <li key={`${entry.at}-${index}`}><p className="text-sm font-bold capitalize">{statusDisplay[entry.status].title}</p><p className="mt-0.5 text-xs text-[var(--muted)]">{new Date(entry.at).toLocaleString()}</p></li>)}</ol>}{request.support_contacts && request.support_contacts.length > 0 && <div role="status" className="mt-5 rounded-xl border border-[#d8e6d0] bg-[#f4f8f1] p-4"><h3 className="font-bold">Need an update?</h3><p className="mt-1 text-sm leading-5 text-[var(--muted)]">Your request is taking longer than expected. Call us and we’ll follow up.</p><div className="mt-3 flex flex-wrap gap-2">{request.support_contacts.map((contact) => <a key={`${contact.name}-${contact.phone}`} href={`tel:${contact.phone.replace(/[^+\d]/g, "")}`} className="min-h-10 rounded-lg bg-[#0b2f20] px-3 py-2 text-sm font-bold text-white">Call {contact.name}</a>)}</div></div>}</div></div>{request.status === "completed" && <button onClick={onNewRequest} className="mt-6 min-h-11 w-full rounded-xl border border-[var(--line)] text-sm font-bold">Request another service</button>}</article> : <div className="mt-6 rounded-[20px] border border-dashed border-[var(--line)] bg-white px-5 py-10 text-center"><ClipboardList className="mx-auto h-8 w-8 text-[#0b2f20]" /><h2 className="mt-3 font-black">No active request</h2><p className="mt-1 text-sm text-[var(--muted)]">Submit a request and we’ll keep your status updated here.</p><button onClick={onNewRequest} className="mt-4 min-h-11 rounded-lg bg-[#0b2f20] px-4 text-sm font-bold text-white">Make a request</button>{requestId && <p className="mt-3 text-xs text-[var(--muted)]">Last reference: {requestId}</p>}</div>}
     </section>
   );

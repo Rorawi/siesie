@@ -43,17 +43,29 @@ export async function POST(request: Request) {
   const services = [...new Set(form.getAll("services").map(String).filter((service) => allowedServices.has(service)))];
   const photos = form.getAll("photos").filter((value): value is File => value instanceof File && value.size > 0);
 
+  if (!customerName || customerName.length > 120) {
+    return NextResponse.json({ error: "Please enter your full name (max 120 characters)." }, { status: 400 });
+  }
+  if (!/^\+?[\d\s().[\]-]{6,24}$/.test(customerPhone)) {
+    return NextResponse.json({ error: "Please enter a valid phone number, e.g. 024 000 0000 or +233 24 000 0000." }, { status: 400 });
+  }
+  if (!issueDescription && services.length === 0) {
+    return NextResponse.json({ error: "Please select at least one service category or describe the issue." }, { status: 400 });
+  }
+  if (issueDescription.length > 3000 || notes.length > 2000) {
+    return NextResponse.json({ error: "The issue description or notes are too long. Please shorten them." }, { status: 400 });
+  }
+  if (!locationLabel && (latitude === null || longitude === null)) {
+    return NextResponse.json({ error: "Share your GPS location or enter a landmark / address so we can find you." }, { status: 400 });
+  }
   if (
-    !customerName || customerName.length > 120 ||
-    !/^\+?[\d\s().-]{7,24}$/.test(customerPhone) ||
-    (!issueDescription && services.length === 0) ||
-    issueDescription.length > 3000 || notes.length > 2000 ||
-    (!locationLabel && (latitude === null || longitude === null)) ||
     (latitude !== null && (!Number.isFinite(latitude) || latitude < -90 || latitude > 90)) ||
-    (longitude !== null && (!Number.isFinite(longitude) || longitude < -180 || longitude > 180)) ||
-    photos.length > 3 || photos.some((photo) => !["image/jpeg", "image/png", "image/webp"].includes(photo.type) || photo.size > 5 * 1024 * 1024)
+    (longitude !== null && (!Number.isFinite(longitude) || longitude < -180 || longitude > 180))
   ) {
-    return NextResponse.json({ error: "Check your contact details, issue, location, and photo files, then try again." }, { status: 400 });
+    return NextResponse.json({ error: "The GPS coordinates look invalid. Try sharing your location again." }, { status: 400 });
+  }
+  if (photos.length > 3 || photos.some((photo) => !["image/jpeg", "image/png", "image/webp"].includes(photo.type) || photo.size > 5 * 1024 * 1024)) {
+    return NextResponse.json({ error: "Photos must be JPEG, PNG, or WebP and no larger than 5 MB each (max 3 photos)." }, { status: 400 });
   }
 
   const id = crypto.randomUUID();
@@ -87,18 +99,28 @@ export async function GET(request: Request) {
     const isStale = Date.now() - new Date(entry.created_at).getTime() >= 10 * 60 * 1000;
     const terminalStatus = entry.status === "completed" || entry.status === "cancelled" || entry.status === "no_show";
     let supportContacts: { name: string; phone: string }[] = [];
+    let mechanic: { name: string; phone: string } | null = null;
+
+    try {
+      if (entry.assigned_mechanic_id) {
+        const mechanics = await listMechanics();
+        const mech = mechanics.find((m) => m.id === entry.assigned_mechanic_id);
+        if (mech) {
+          mechanic = { name: mech.name, phone: mech.phone };
+        }
+      }
+    } catch (error) {
+      console.error("[requests] Could not load mechanic", error);
+    }
+
     const shouldOfferSupport = isStale && !terminalStatus;
     if (shouldOfferSupport) {
-      try {
-        supportContacts = (await listMechanics())
-          .filter((mechanic) => mechanic.active && entry.assigned_mechanic_id === mechanic.id)
-          .map((mechanic) => ({ name: mechanic.name, phone: mechanic.phone }));
-      } catch (error) {
-        console.error("[requests] Could not load support contact", error);
+      const receptionistPhone = process.env.NEXT_PUBLIC_SIESIE_RECEPTION_PHONE;
+      if (receptionistPhone) {
+        supportContacts.push({ name: "Siesie dispatcher", phone: receptionistPhone });
       }
     }
-    const receptionistPhone = shouldOfferSupport ? process.env.NEXT_PUBLIC_SIESIE_RECEPTION_PHONE : undefined;
-    if (receptionistPhone) supportContacts.unshift({ name: "Siesie dispatcher", phone: receptionistPhone });
+
     return NextResponse.json({
       id: entry.id,
       service_type: entry.service_type,
@@ -108,6 +130,7 @@ export async function GET(request: Request) {
       updated_at: entry.updated_at,
       status_history: entry.status_history.map(({ status, at }) => ({ status, at })),
       support_contacts: supportContacts,
+      mechanic,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("[requests] Could not load request status", error);
