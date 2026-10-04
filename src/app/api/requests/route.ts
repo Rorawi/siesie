@@ -98,7 +98,7 @@ export async function GET(request: Request) {
     if (!entry) return NextResponse.json({ error: "Request not found." }, { status: 404 });
     const isStale = Date.now() - new Date(entry.created_at).getTime() >= 10 * 60 * 1000;
     const terminalStatus = entry.status === "completed" || entry.status === "cancelled" || entry.status === "no_show";
-    let supportContacts: { name: string; phone: string }[] = [];
+    const supportContacts: { name: string; phone: string }[] = [];
     let mechanic: { name: string; phone: string } | null = null;
 
     try {

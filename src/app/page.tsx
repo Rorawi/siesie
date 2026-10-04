@@ -2,9 +2,9 @@
 
 import { useState, type FormEvent } from "react";
 import Image from "next/image";
-import { ArrowRight, BadgeCheck, CarFront, CheckCircle2, Clock3, MapPinned, ShieldCheck, Star, Users } from "lucide-react";
+import { ArrowRight, BadgeCheck, CarFront, Clock3, MapPinned, ShieldCheck, Star, Users } from "lucide-react";
+
 import BrandLogo from "@/components/BrandLogo";
-import RoadStoryAnimation from "@/components/RoadStoryAnimation";
 import WhySiesieCarAnimation from "@/components/WhySiesieCarAnimation";
 
 const steps = [
@@ -207,7 +207,7 @@ export default function HomePage() {
                 Know who is coming.
               </h2>
               <p className="mt-5 max-w-lg text-base leading-8 text-[var(--muted)]">
-                Once help is dispatched, you'll see exactly who your mechanic
+                Once help is dispatched, you&apos;ll see exactly who your mechanic
                 is, how long until they arrive, and be able to call them directly — no more
                 waiting in the dark.
               </p>

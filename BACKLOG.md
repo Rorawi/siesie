@@ -1,16 +1,20 @@
 # Siesie Backlog
 
-Last updated: 2026-10-01
+Last updated: 2026-10-04
 
 Launch mode is Phase 1 manual dispatch: one mechanic, founder/receptionist coordinates requests by phone. The customer app has no live map, automatic matching, or mechanic app. Public mechanic/tow recruitment is intentionally hidden until the provider network is ready.
 
 ## Next up
 
-- [ ] **Security: rotate the Supabase service-role key.** It was exposed in a chat attachment. Create a replacement in Supabase, update the local server environment and hosting environment, then revoke the exposed key. Never paste keys into chat or commit them.
-- [ ] **Connect and verify Supabase persistence.** Apply `supabase/schema.sql`; confirm request creation, admin updates/status history, mechanics, and private photo uploads use Supabase. Confirm `.env` has the required server-only URL/key, without printing either value.
+- [ ] **Set production environment variables on Vercel.** The live 500 (customer requests) and 503 (admin/requests) errors are caused by missing env vars on Vercel. Add these in **Vercel → Project → Settings → Environment Variables** and redeploy:
+  - `SUPABASE_URL` — your Supabase project URL
+  - `SUPABASE_SERVICE_ROLE_KEY` — server-only service-role key (never use `NEXT_PUBLIC_`)
+  - `ADMIN_PASSWORD` — a strong password for the admin dashboard Basic Auth
+  - `NEXT_PUBLIC_SIESIE_WHATSAPP_NUMBER` — optional, enables WhatsApp location link
+  - `NEXT_PUBLIC_SIESIE_RECEPTION_PHONE` — optional, shown after 10-min stale requests
+- [ ] **Security: rotate the Supabase service-role key.** It was exposed in a chat attachment. Create a replacement in Supabase, update local `.env` and Vercel env settings, then revoke the exposed key.
 - [ ] **Configure launch contact numbers.** Add the confirmed Siesie WhatsApp and receptionist numbers; test the location-share link and delayed-request call actions.
 - [ ] **Connect production email.** Configure SMTP and owner notification recipient; test confirmation and provider/request notifications.
-- [ ] **Choose and link the hosting project.** Set production secrets, persistent storage, domain, and HTTPS; verify admin authentication and lead privacy in production.
 
 ## Phase 1 Improvements
 
@@ -33,3 +37,7 @@ Launch mode is Phase 1 manual dispatch: one mechanic, founder/receptionist coord
 - [x] Arrival verification code shared with customer only after the mechanic is marked arrived.
 - [x] Direct customer SOS call action (currently links to Ghana Police 191; verify before launch).
 - [x] Hide public mechanic/tow recruitment during one-mechanic launch.
+- [x] Confirmed Supabase connection works (REST + Storage APIs respond correctly with service-role key).
+- [x] Fixed service label truncation in customer request form ("Breakdown" was clipped in 2-col grid; added `min-w-0`).
+- [x] Removed debug `console.log` from `proxy.ts` that was leaking config state to production logs.
+- [x] Fixed all lint errors (prefer-const in requests route, unused imports and unescaped entity in page.tsx).

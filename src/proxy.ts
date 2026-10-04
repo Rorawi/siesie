@@ -14,11 +14,6 @@ export async function proxy(request: NextRequest) {
 
   const expectedPassword = process.env.ADMIN_PASSWORD;
 
-  console.log(
-    "ADMIN_PASSWORD configured:",
-    Boolean(expectedPassword)
-  );
-
   if (!expectedPassword) {
     return new NextResponse("Lead admin is not configured.", {
       status: 503,
