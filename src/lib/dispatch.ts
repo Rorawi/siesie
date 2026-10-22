@@ -2,7 +2,18 @@ import { promises as fs } from "fs";
 import path from "path";
 import { randomInt } from "node:crypto";
 
-export type DispatchStatus = "new" | "reviewed" | "assigned" | "arrived" | "in_progress" | "completed" | "cancelled" | "no_show";
+export type DispatchStatus =
+  | "new"
+  | "reviewed"
+  | "callback_confirmed"
+  | "assigned"
+  | "arrived"
+  | "in_progress"
+  | "completed"
+  | "cancelled"
+  | "no_show";
+
+export type LocationSource = "gps" | "manual_pin";
 
 export type StatusEvent = {
   status: DispatchStatus;
@@ -29,10 +40,15 @@ export type DispatchRequest = {
   photo_paths: string[];
   arrival_code: string;
   location_label: string;
+  location_source: LocationSource;
   latitude: number | null;
   longitude: number | null;
+  is_scheduled: boolean;
+  scheduled_at: string | null;
   status: DispatchStatus;
   assigned_mechanic_id: string | null;
+  callback_confirmed_at: string | null;
+  callback_note: string | null;
   status_history: StatusEvent[];
   created_at: string;
   updated_at: string;
@@ -131,13 +147,39 @@ export async function saveMechanic(mechanic: Pick<MechanicRecord, "id" | "name" 
   return saved;
 }
 
-export async function createDispatchRequest(input: Omit<DispatchRequest, "status" | "assigned_mechanic_id" | "status_history" | "arrival_code" | "created_at" | "updated_at">) {
+/**
+ * Look up the most recent customer name for a given phone number.
+ * Returns null if not found.
+ */
+export async function lookupCustomerByPhone(phone: string): Promise<{ name: string } | null> {
+  const normalized = phone.replace(/\s/g, "");
+  if (!normalized) return null;
+  if (isSupabaseConfigured) {
+    // Match on the normalized form (stored as-typed, so try a few forms)
+    const rows = await supabase<DispatchRequest[]>(
+      `service_requests?customer_phone=eq.${encodeURIComponent(phone)}&select=customer_name&order=created_at.desc&limit=1`,
+    ).catch(() => [] as DispatchRequest[]);
+    if (rows[0]) return { name: rows[0].customer_name };
+    return null;
+  }
+  const requests = await readLocal<DispatchRequest>(requestsFile);
+  const match = requests
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .find((r) => r.customer_phone.replace(/\s/g, "") === normalized);
+  return match ? { name: match.customer_name } : null;
+}
+
+export async function createDispatchRequest(
+  input: Omit<DispatchRequest, "status" | "assigned_mechanic_id" | "status_history" | "arrival_code" | "callback_confirmed_at" | "callback_note" | "created_at" | "updated_at">,
+) {
   const now = new Date().toISOString();
   const request: DispatchRequest = {
     ...input,
     arrival_code: randomInt(1000, 10000).toString(),
     status: "new",
     assigned_mechanic_id: null,
+    callback_confirmed_at: null,
+    callback_note: null,
     status_history: [{ status: "new", at: now }],
     created_at: now,
     updated_at: now,
@@ -183,22 +225,39 @@ export async function getDispatchRequest(id: string): Promise<DispatchRequest | 
 
 export async function updateDispatchRequest(
   id: string,
-  update: { status?: DispatchStatus; assigned_mechanic_id?: string | null; location_label?: string; note?: string },
+  update: {
+    status?: DispatchStatus;
+    assigned_mechanic_id?: string | null;
+    location_label?: string;
+    note?: string;
+    callback_confirmed_at?: string;
+    callback_note?: string;
+  },
 ) {
   const current = await getDispatchRequest(id);
   if (!current) return null;
+
+  // Block assigning before callback is confirmed
+  if (update.status === "assigned" && !current.callback_confirmed_at && !update.callback_confirmed_at) {
+    throw new Error("Cannot assign a service professional before the admin callback is confirmed.");
+  }
+
   const now = new Date().toISOString();
   const statusHistory = update.status && update.status !== current.status
     ? [...current.status_history, { status: update.status, at: now, note: update.note?.trim() || undefined }]
     : current.status_history;
+
   const updated: DispatchRequest = {
     ...current,
     status: update.status ?? current.status,
     assigned_mechanic_id: update.assigned_mechanic_id === undefined ? current.assigned_mechanic_id : update.assigned_mechanic_id,
     location_label: update.location_label?.trim() || current.location_label,
+    callback_confirmed_at: update.callback_confirmed_at ?? current.callback_confirmed_at,
+    callback_note: update.callback_note !== undefined ? update.callback_note : current.callback_note,
     status_history: statusHistory,
     updated_at: now,
   };
+
   if (isSupabaseConfigured) {
     const rows = await supabase<DispatchRequest[]>(`service_requests?id=eq.${encodeURIComponent(id)}&select=*`, {
       method: "PATCH",
@@ -207,6 +266,8 @@ export async function updateDispatchRequest(
         status: updated.status,
         assigned_mechanic_id: updated.assigned_mechanic_id,
         location_label: updated.location_label,
+        callback_confirmed_at: updated.callback_confirmed_at,
+        callback_note: updated.callback_note,
         status_history: updated.status_history,
         updated_at: updated.updated_at,
       }),

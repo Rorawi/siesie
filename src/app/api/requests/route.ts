@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { createDispatchRequest, getDispatchRequest, listMechanics, saveRequestPhoto } from "@/lib/dispatch";
+import { createDispatchRequest, getDispatchRequest, listMechanics, lookupCustomerByPhone, saveRequestPhoto } from "@/lib/dispatch";
+import type { LocationSource } from "@/lib/dispatch";
+import { sendOwnerNotification } from "@/lib/email";
 
 const allowedServices = new Set([
   "Emergency breakdown",
@@ -11,6 +13,8 @@ const allowedServices = new Set([
   "Car wash",
   "Tow truck",
 ]);
+const allowedWashPackages = new Set(["Exterior wash", "Interior clean", "Full wash", "Detailing"]);
+const schedulableServices = new Set(["Oil change", "Brake service", "Diagnostics", "Car wash"]);
 const requestRateLimit = new Map<string, number>();
 
 function limited(ip: string) {
@@ -38,10 +42,23 @@ export async function POST(request: Request) {
   const locationLabel = String(form.get("location_label") ?? "").trim();
   const rawLatitude = String(form.get("latitude") ?? "").trim();
   const rawLongitude = String(form.get("longitude") ?? "").trim();
+  const rawLocationSource = String(form.get("location_source") ?? "").trim();
   const latitude = rawLatitude ? Number(rawLatitude) : null;
   const longitude = rawLongitude ? Number(rawLongitude) : null;
+  const locationSource: LocationSource = rawLocationSource === "manual_pin" ? "manual_pin" : "gps";
   const services = [...new Set(form.getAll("services").map(String).filter((service) => allowedServices.has(service)))];
   const photos = form.getAll("photos").filter((value): value is File => value instanceof File && value.size > 0);
+  const rawScheduledAt = String(form.get("scheduled_at") ?? "").trim();
+  const washPackage = String(form.get("wash_package") ?? "").trim();
+  let scheduledAt: string | null = null;
+  if (rawScheduledAt) {
+    const appointment = new Date(rawScheduledAt);
+    if (!Number.isFinite(appointment.getTime()) || appointment.getTime() <= Date.now()) {
+      return NextResponse.json({ error: "Choose a valid future date and time." }, { status: 400 });
+    }
+    scheduledAt = appointment.toISOString();
+  }
+  const isScheduled = Boolean(scheduledAt);
 
   if (!customerName || customerName.length > 120) {
     return NextResponse.json({ error: "Please enter your full name (max 120 characters)." }, { status: 400 });
@@ -52,17 +69,25 @@ export async function POST(request: Request) {
   if (!issueDescription && services.length === 0) {
     return NextResponse.json({ error: "Please select at least one service category or describe the issue." }, { status: 400 });
   }
+  if (services.includes("Car wash") && !allowedWashPackages.has(washPackage)) {
+    return NextResponse.json({ error: "Choose the type of car wash you would like." }, { status: 400 });
+  }
+  if (services.includes("Car wash") && !scheduledAt) {
+    return NextResponse.json({ error: "Choose a date and time for your car wash." }, { status: 400 });
+  }
+  if (scheduledAt && !services.some((service) => schedulableServices.has(service))) {
+    return NextResponse.json({ error: "This service does not support an appointment time." }, { status: 400 });
+  }
   if (issueDescription.length > 3000 || notes.length > 2000) {
     return NextResponse.json({ error: "The issue description or notes are too long. Please shorten them." }, { status: 400 });
   }
-  if (!locationLabel && (latitude === null || longitude === null)) {
-    return NextResponse.json({ error: "Share your GPS location or enter a landmark / address so we can find you." }, { status: 400 });
+  // Location is mandatory — must have real coordinates
+  if (latitude === null || longitude === null) {
+    return NextResponse.json({ error: "A confirmed location is required so we can send your service team to the right place." }, { status: 400 });
   }
-  if (
-    (latitude !== null && (!Number.isFinite(latitude) || latitude < -90 || latitude > 90)) ||
-    (longitude !== null && (!Number.isFinite(longitude) || longitude < -180 || longitude > 180))
-  ) {
-    return NextResponse.json({ error: "The GPS coordinates look invalid. Try sharing your location again." }, { status: 400 });
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+      !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+    return NextResponse.json({ error: "The location coordinates look invalid. Please pin your location again." }, { status: 400 });
   }
   if (photos.length > 3 || photos.some((photo) => !["image/jpeg", "image/png", "image/webp"].includes(photo.type) || photo.size > 5 * 1024 * 1024)) {
     return NextResponse.json({ error: "Photos must be JPEG, PNG, or WebP and no larger than 5 MB each (max 3 photos)." }, { status: 400 });
@@ -76,22 +101,58 @@ export async function POST(request: Request) {
       customer_name: customerName,
       customer_phone: customerPhone,
       service_type: services.join(", ") || "Other / not listed",
-      issue_description: issueDescription || services.join(", "),
+      issue_description: services.includes("Car wash") ? `Car wash package: ${washPackage}` : issueDescription || services.join(", "),
       notes: notes || null,
       photo_paths: photoPaths,
-      location_label: locationLabel || "GPS location shared",
+      location_label: locationLabel || "Location pin dropped",
+      location_source: locationSource,
       latitude,
       longitude,
+      is_scheduled: isScheduled,
+      scheduled_at: scheduledAt,
     });
-    return NextResponse.json({ id: created.id, status: created.status, message: "Request received — we’re arranging your mechanic." }, { status: 201 });
+    // Fire-and-forget owner notification — must not block or fail the response
+    sendOwnerNotification({
+      title: `New Siesie request: ${services.join(", ") || "Other"}`,
+      body: [
+        `Name: ${customerName}`,
+        `Phone: ${customerPhone}`,
+        `Service: ${services.join(", ") || "Other / not listed"}`,
+        issueDescription ? `Issue: ${issueDescription}` : null,
+        `Location: ${locationLabel || "Pin dropped"} (${locationSource})`,
+        notes ? `Notes: ${notes}` : null,
+        isScheduled && scheduledAt ? `Scheduled: ${scheduledAt}` : null,
+        photos.length ? `Photos: ${photos.length}` : null,
+      ].filter(Boolean).join("\n"),
+    }).catch((error) => console.error("[requests] Owner notification failed", error));
+
+    return NextResponse.json(
+      { id: created.id, status: created.status, message: "Request received — we're arranging your service." },
+      { status: 201 },
+    );
   } catch (error) {
     console.error("[requests] Could not save customer request", error);
-    return NextResponse.json({ error: "We couldn’t save your request just now. Please try again." }, { status: 500 });
+    return NextResponse.json({ error: "We couldn't save your request just now. Please try again." }, { status: 500 });
   }
 }
 
 export async function GET(request: Request) {
-  const id = new URL(request.url).searchParams.get("id");
+  const url = new URL(request.url);
+  const id = url.searchParams.get("id");
+  const phone = url.searchParams.get("phone");
+
+  // Customer name lookup by phone (for returning customer auto-fill)
+  if (phone) {
+    if (phone.length > 30) return NextResponse.json({ error: "Invalid phone." }, { status: 400 });
+    try {
+      const result = await lookupCustomerByPhone(phone);
+      if (!result) return NextResponse.json({ error: "Not found." }, { status: 404 });
+      return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
+    } catch {
+      return NextResponse.json({ error: "Lookup unavailable." }, { status: 503 });
+    }
+  }
+
   if (!id || id.length > 64) return NextResponse.json({ error: "Request ID is required." }, { status: 400 });
   try {
     const entry = await getDispatchRequest(id);
@@ -105,9 +166,7 @@ export async function GET(request: Request) {
       if (entry.assigned_mechanic_id) {
         const mechanics = await listMechanics();
         const mech = mechanics.find((m) => m.id === entry.assigned_mechanic_id);
-        if (mech) {
-          mechanic = { name: mech.name, phone: mech.phone };
-        }
+        if (mech) mechanic = { name: mech.name, phone: mech.phone };
       }
     } catch (error) {
       console.error("[requests] Could not load mechanic", error);
@@ -116,15 +175,15 @@ export async function GET(request: Request) {
     const shouldOfferSupport = isStale && !terminalStatus;
     if (shouldOfferSupport) {
       const receptionistPhone = process.env.NEXT_PUBLIC_SIESIE_RECEPTION_PHONE;
-      if (receptionistPhone) {
-        supportContacts.push({ name: "Siesie dispatcher", phone: receptionistPhone });
-      }
+      if (receptionistPhone) supportContacts.push({ name: "Siesie dispatcher", phone: receptionistPhone });
     }
 
     return NextResponse.json({
       id: entry.id,
       service_type: entry.service_type,
       status: entry.status,
+      is_scheduled: entry.is_scheduled,
+      scheduled_at: entry.scheduled_at,
       arrival_code: entry.status === "arrived" || entry.status === "in_progress" ? entry.arrival_code : null,
       created_at: entry.created_at,
       updated_at: entry.updated_at,

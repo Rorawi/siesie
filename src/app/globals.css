@@ -2,15 +2,21 @@
 
 :root {
 	color-scheme: light;
-	--ink: #17211f;
-	--muted: #71807c;
-	--paper: #ffffff;
+	--ink: #18231e;
+	--muted: #69776e;
+	--paper: #f5f7f3;
 	--panel: #ffffff;
-	--line: #e2ebe5;
-	--accent: #b8f36b;
-	--accent-dark: #1d542f;
-	--navy: #1b3135;
-	--brown: #eae4de;
+	--line: #e1e8df;
+	--accent: #c7e08d;
+	--accent-dark: #174b35;
+	--navy: #173d2e;
+	--brown: #ece9df;
+	--forest: #123d2c;
+	--leaf: #3f8155;
+	--canvas: #f5f7f3;
+	--surface: #ffffff;
+	--text-secondary: #69776e;
+	--border-subtle: #e1e8df;
 }
 
 * {
@@ -25,7 +31,7 @@ body {
 	margin: 0;
 	background: var(--paper);
 	color: var(--ink);
-	font-family: "Trebuchet MS", "Avenir Next", sans-serif;
+	font-family: Inter, "Avenir Next", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 button,
@@ -38,6 +44,22 @@ textarea,
 select,
 button {
 	font: inherit;
+}
+
+:focus-visible {
+	outline: 2px solid #2e7751;
+	outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		scroll-behavior: auto !important;
+		transition-duration: 0.01ms !important;
+	}
 }
 
 .map-grid {
