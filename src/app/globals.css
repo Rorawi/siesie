@@ -272,3 +272,18 @@ button {
 		stroke-dashoffset: -100;
 	}
 }
+
+/* Let admin queue tabs wrap according to the space they actually have. */
+[role="tablist"] {
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+}
+
+[role="tablist"] [role="tab"] {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	min-width: 0;
+	white-space: nowrap;
+}
