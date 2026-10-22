@@ -63,6 +63,7 @@ export default function AdminRequestsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [mechanicName, setMechanicName] = useState("");
   const [mechanicPhone, setMechanicPhone] = useState("");
+  const [editingMechanicId, setEditingMechanicId] = useState<string | null>(null);
   const [savingMechanic, setSavingMechanic] = useState(false);
   const [queueFilter, setQueueFilter] = useState<QueueFilter>("requests");
   const [page, setPage] = useState(1);
@@ -149,10 +150,6 @@ export default function AdminRequestsPage() {
         setRequests(nextRequests);
       }
       setMechanics(nextMechanics);
-      if (nextMechanics[0]) {
-        setMechanicName((c) => c || nextMechanics[0].name);
-        setMechanicPhone((c) => c || nextMechanics[0].phone);
-      }
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not load requests.");
@@ -175,19 +172,46 @@ export default function AdminRequestsPage() {
   }
 
   async function saveMechanic(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setSavingMechanic(true);
+    event.preventDefault();
+    setSavingMechanic(true);
+    setError("");
+    const mechanicBeingEdited = editingMechanicId;
     try {
       const res = await fetch("/api/admin/mechanics", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: mechanics[0]?.id ?? "mechanic-puff-daddy", name: mechanicName, phone: mechanicPhone }),
+        body: JSON.stringify({
+          ...(mechanicBeingEdited ? { id: mechanicBeingEdited } : {}),
+          name: mechanicName,
+          phone: mechanicPhone,
+        }),
       });
       const result = await res.json() as MechanicRecord | { error?: string };
       if (!res.ok || !("id" in result)) throw new Error((result as { error?: string }).error || "Could not save mechanic.");
-      setMechanics((m) => m.map((x) => x.id === (result as MechanicRecord).id ? (result as MechanicRecord) : x));
-      setNotice("Mechanic record updated.");
+      const savedMechanic = result as MechanicRecord;
+      setMechanics((current) => current.some((mechanic) => mechanic.id === savedMechanic.id)
+        ? current.map((mechanic) => mechanic.id === savedMechanic.id ? savedMechanic : mechanic)
+        : [...current, savedMechanic]);
+      setNotice(mechanicBeingEdited ? "Mechanic record updated." : "Mechanic added.");
+      setEditingMechanicId(null);
+      setMechanicName("");
+      setMechanicPhone("");
     } catch (e) { setError(e instanceof Error ? e.message : "Could not save mechanic."); }
     finally { setSavingMechanic(false); }
+  }
+
+  function editMechanic(mechanic: MechanicRecord) {
+    setEditingMechanicId(mechanic.id);
+    setMechanicName(mechanic.name);
+    setMechanicPhone(mechanic.phone);
+    setError("");
+    setNotice("");
+  }
+
+  function cancelMechanicEdit() {
+    setEditingMechanicId(null);
+    setMechanicName("");
+    setMechanicPhone("");
   }
 
   async function updateRequest(id: string, update: {
@@ -292,18 +316,27 @@ export default function AdminRequestsPage() {
             {/* mechanic panel */}
             <section className="rounded-2xl border border-[var(--line)] bg-white p-5">
               <div className="flex items-center gap-2"><Wrench className="h-4 w-4 text-[#0b2f20]" /><h2 className="font-black">Mechanics</h2></div>
-              {mechanics.map((m) => (
-                <div key={m.id} className="mt-4 rounded-xl bg-[#f6f8f5] p-3">
-                  <p className="font-bold">{m.name}</p>
-                  <a href={`tel:${m.phone.replace(/[^+\d]/g, "")}`} className="mt-1 inline-block text-sm font-semibold text-[#0b2f20]">{m.phone} · Call</a>
-                  <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-[#1d542f]">{m.active ? "Available" : "Inactive"}</p>
-                </div>
-              ))}
+              <div className="mt-4 space-y-2">
+                {mechanics.map((mechanic) => (
+                  <div key={mechanic.id} className="flex items-center justify-between gap-3 rounded-xl bg-[#f6f8f5] p-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-bold">{mechanic.name}</p>
+                      <a href={`tel:${mechanic.phone.replace(/[^+\d]/g, "")}`} className="mt-1 inline-block text-sm font-semibold text-[#0b2f20]">{mechanic.phone} · Call</a>
+                      <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-[#1d542f]">{mechanic.active ? "Available" : "Inactive"}</p>
+                    </div>
+                    <button type="button" onClick={() => editMechanic(mechanic)} className="min-h-10 shrink-0 rounded-lg border border-[var(--line)] bg-white px-3 text-xs font-bold text-[#0b2f20]">Edit</button>
+                  </div>
+                ))}
+                {mechanics.length === 0 && <p className="rounded-xl bg-[#f6f8f5] p-3 text-sm text-[var(--muted)]">No mechanics added yet.</p>}
+              </div>
               <form onSubmit={saveMechanic} className="mt-4 space-y-3 border-t border-[var(--line)] pt-4">
-                <p className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">Edit primary mechanic</p>
-                <label className="block"><span className="sr-only">Mechanic name</span><input value={mechanicName} onChange={(e) => setMechanicName(e.target.value)} placeholder={mechanics[0]?.name ?? "Mechanic name"} required maxLength={120} className="min-h-11 w-full rounded-lg border border-[var(--line)] px-3 text-sm" /></label>
-                <label className="block"><span className="sr-only">Phone</span><input value={mechanicPhone} onChange={(e) => setMechanicPhone(e.target.value)} placeholder={mechanics[0]?.phone ?? "Phone number"} required maxLength={24} className="min-h-11 w-full rounded-lg border border-[var(--line)] px-3 text-sm" /></label>
-                <button disabled={savingMechanic} className="min-h-11 w-full rounded-lg bg-[#0b2f20] px-3 text-sm font-bold text-white disabled:opacity-60">{savingMechanic ? "Saving…" : "Save mechanic"}</button>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">{editingMechanicId ? "Edit mechanic" : "Add a mechanic"}</p>
+                  {editingMechanicId && <button type="button" onClick={cancelMechanicEdit} className="min-h-9 rounded-lg px-2 text-xs font-bold text-[var(--muted)]">Cancel</button>}
+                </div>
+                <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--muted)]">Name</span><input value={mechanicName} onChange={(e) => setMechanicName(e.target.value)} placeholder="Mechanic name" required maxLength={120} className="min-h-11 w-full rounded-lg border border-[var(--line)] px-3 text-sm" /></label>
+                <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--muted)]">Phone number</span><input value={mechanicPhone} onChange={(e) => setMechanicPhone(e.target.value)} type="tel" autoComplete="tel" placeholder="024 000 0000" required maxLength={24} className="min-h-11 w-full rounded-lg border border-[var(--line)] px-3 text-sm" /></label>
+                <button disabled={savingMechanic} className="min-h-11 w-full rounded-lg bg-[#0b2f20] px-3 text-sm font-bold text-white disabled:opacity-60">{savingMechanic ? "Saving…" : editingMechanicId ? "Save changes" : "Add mechanic"}</button>
               </form>
             </section>
 
